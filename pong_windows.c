@@ -1,4 +1,5 @@
 #include <windows.h>
+#include "pong_windows.h"
 void get_terminal_size(int *width, int *height) {
     CONSOLE_SCREEN_BUFFER_INFO csbi;
     HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -14,58 +15,44 @@ void get_terminal_size(int *width, int *height) {
 }
 
 void set_pixel_white(int x, int y){
-    HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
-    if (hConsole == INVALID_HANDLE_VALUE) return;
-
-    // 2. Define the target cell coordinate (X = column, Y = row)
-    COORD cellCoords = { x, y };
-
-    // 3. Define the pure white background attribute (RGB + High Intensity)
-    WORD whiteBackground = BACKGROUND_RED | BACKGROUND_GREEN | BACKGROUND_BLUE | BACKGROUND_INTENSITY;
-
-    // 4. Write the attribute to exactly 1 cell
-    DWORD attributesWritten;
-    WriteConsoleOutputAttribute(
-        hConsole,          // Screen buffer handle
-        &whiteBackground,  // Pointer to the color attribute
-        1,                 // Number of cells to modify
-        cellCoords,        // Coordinate of the cell
-        &attributesWritten // Variable to store results
-    );
-
-    // Optional: If the cell is empty, you may also want to write a space character to it
-    DWORD charsWritten;
-    WriteConsoleOutputCharacter(hConsole, " ", 1, cellCoords, &charsWritten);
-
-    // Move cursor out of the way for clean output
-    COORD endCoords = { 0, 10 };
-    SetConsoleCursorPosition(hConsole, endCoords);
-}
+    if (x < 0 || y < 0 || x >= width || y >= height) return;
+    CHAR_INFO* c = &pixel_buffs[y * width + x];
+    c->Char.AsciiChar = ' ';
+    c->Attributes = BACKGROUND_RED | BACKGROUND_GREEN |
+                    BACKGROUND_BLUE | BACKGROUND_INTENSITY;}
 void set_pixel_black(int x, int y){
-    HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
-    if (hConsole == INVALID_HANDLE_VALUE) return;
+    return;
+}
+void set_cursor_pos(int x, int y){
+    SetCursorPos(x, y);
+}
+void present(void) {
+    HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
+    COORD size = { (SHORT)width, (SHORT)height };
+    COORD zero = { 0, 0 };
+    CONSOLE_SCREEN_BUFFER_INFO csbi;
+    GetConsoleScreenBufferInfo(out, &csbi);
+    SMALL_RECT r = csbi.srWindow;   // draw into the visible window
+    WriteConsoleOutputA(out, pixel_buffs , size, zero, &r);
+    for (int i = 0; i < width * height; i++) {
+        pixel_buffs[i].Char.AsciiChar = ' ';
+        pixel_buffs[i].Attributes = 0;
+    }
+}
+void move_cursor_to_bottom(){
+    HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
+    CONSOLE_SCREEN_BUFFER_INFO csbi;
 
-    // 2. Define the target cell coordinate (X = column, Y = row)
-    COORD cellCoords = { x, y };
-
-    // 3. Define the pure white background attribute (RGB + High Intensity)
-    WORD whiteBackground = 0;
-
-    // 4. Write the attribute to exactly 1 cell
-    DWORD attributesWritten;
-    WriteConsoleOutputAttribute(
-        hConsole,          // Screen buffer handle
-        &whiteBackground,  // Pointer to the color attribute
-        1,                 // Number of cells to modify
-        cellCoords,        // Coordinate of the cell
-        &attributesWritten // Variable to store results
-    );
-
-    // Optional: If the cell is empty, you may also want to write a space character to it
-    DWORD charsWritten;
-    WriteConsoleOutputCharacter(hConsole, " ", 1, cellCoords, &charsWritten);
-
-    // Move cursor out of the way for clean output
-    COORD endCoords = { 0, 10 };
-    SetConsoleCursorPosition(hConsole, endCoords);
+    if (GetConsoleScreenBufferInfo(h, &csbi)) {
+        COORD pos = { 0, csbi.srWindow.Bottom };  // col 0, last visible row
+        SetConsoleCursorPosition(h, pos);
+    }
+}
+void init_screen(int w, int h) {
+    pixel_buffs = calloc(w * h, sizeof(CHAR_INFO));
+    width = w;
+    height = h;
+    HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
+    CONSOLE_CURSOR_INFO ci = { 1, FALSE };   // hide the blinking cursor
+    SetConsoleCursorInfo(out, &ci);
 }
