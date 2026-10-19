@@ -1,3 +1,4 @@
+
 //You will inevitably forget this and cause a bug, but 0,0 is top left, not bottom left or middle
 #include <stdio.h>
 #include <stdint.h>
@@ -6,6 +7,10 @@
 #include <math.h>
 #include <time.h>
 #include <conio.h>
+#include "flags.h"
+#ifdef DEBUG
+static char* speeds;
+#endif
 #ifdef _WIN64
     #include "pong_windows.h"
 #endif
@@ -25,6 +30,7 @@ typedef struct {
     float paddle_height;
     float paddle_side_margin;
     float ball_width;
+    float bottom_rule_offset;
 } Config;
 typedef struct{
     size_t width;
@@ -71,6 +77,17 @@ void draw_board(Board* board) {
             set_pixel_white(i, j);
         }
     }
+
+    //bottom rule
+    int rule_level = board->height;
+    for(int i = 0; i < board->width; i++){
+        set_pixel_char(i, rule_level, '_');
+    }
+    //horizontal separators 
+    for (int i = rule_level + 1; i < board->height * (2-board->config->bottom_rule_offset); i++){
+        set_pixel_char(board->width * 0.25, i, '|');
+        set_pixel_char(board->width * 0.75, i, '|');
+    }
     present();
 }
 Board* create_board(){
@@ -82,13 +99,14 @@ Board* create_board(){
     int width = 0;
     get_terminal_size(&width, &height);
     
-    board->height = height;
     board->width = width;
     board->config = malloc(sizeof(Config));
     board->config->paddle_width = 0.01;
     board->config->ball_width = 0.01;
     board->config->paddle_side_margin = 0.05;
     board->config->paddle_height = 0.2;
+    board->config->bottom_rule_offset = 0.85;
+    board->height = height * board->config->bottom_rule_offset;
 
     ball->size = roundf(board->config->ball_width * width);
     ball->x = (width / 2) - (ball->size / 2);
@@ -116,7 +134,10 @@ int clamp(int num, int min, int max){
     }
     return num;
 }
-void run_cycle(Board* board){
+bool run_cycle(Board* board){
+    if (GetAsyncKeyState('Q') & 0x8000) {
+        return false;
+    }
     if (GetAsyncKeyState('W') & 0x8000) board->left->y -= 1;
     if (GetAsyncKeyState('S') & 0x8000) board->left->y += 1;
     if (GetAsyncKeyState(VK_UP) & 0x8000) board->right->y -= 1;
@@ -141,8 +162,8 @@ void run_cycle(Board* board){
         board->ball->x = board->width;
         board->ball->vx = -board->ball->vx;
     }
-    int paddle_width = ceil(board->height - (board->height * board->config->paddle_height));
-    int paddle_height = ceil(board->height - (board->height * board->config->paddle_height));
+    int paddle_width = ceil(board->config->paddle_width * board->width);
+    int paddle_height = ceil(board->config->paddle_height * board->height);
     int ball_height = board->ball->size / 2;
     int ball_right_x = board->ball->x + board->ball->size;
     int ball_bottom_y = board->ball->y + ball_height;
@@ -154,37 +175,62 @@ void run_cycle(Board* board){
     if (board->ball->vx < 0 && board->ball->x <= left_paddle_right_x && ball_right_x >= left_paddle_left_x && board->ball->y < left_paddle_bottom_y && ball_bottom_y > board->left->y) {
         board->ball->x = left_paddle_right_x;
         int ph = (int)ceil(board->config->paddle_height * board->height);
-        float ball_cy = board->ball->y + board->ball->size / 4.0f;       // size/2 is the height
+        float ball_cy = board->ball->y + ball_height / 2.0f;
         float pad_cy  = board->left->y + ph / 2.0f;
         float offset  = (ball_cy - pad_cy) / (ph / 2.0f);  // -1..1
-        if (offset > 1) offset = 1; if (offset < -1) offset = -1;
+        if (offset > 1) offset = 1;
+        if (offset < -1) offset = -1;
 
         float speed = hypotf(board->ball->vx, board->ball->vy) * 1.05f;  // optional speedup per hit
         float angle = offset * 1.0f;                       // max ~57 degrees, in radians
-        float dir   = board->left->is_left ? 1.0f : -1.0f;           // send it away from the paddle
+        float dir   = 1.0f;                                // send it away from the paddle
 
         board->ball->vx = dir * speed * cosf(angle);
         board->ball->vy = speed * sinf(angle);
     }
 
-    int right_paddle_left_x = board->width - left_paddle_left_x - paddle_width;
+    int right_paddle_left_x = board->width - left_paddle_right_x;
     int right_paddle_right_x = right_paddle_left_x + paddle_width;
     int right_paddle_bottom_y = board->right->y + paddle_height;
 
     if (board->ball->vx > 0 && ball_right_x >= right_paddle_left_x && board->ball->x <= right_paddle_right_x && board->ball->y < right_paddle_bottom_y && ball_bottom_y > board->right->y) {
         board->ball->x = right_paddle_left_x - board->ball->size;
-        board->ball->vx = -board->ball->vx;
-    }
+        int ph = (int)ceil(board->config->paddle_height * board->height);
+        float ball_cy = board->ball->y + ball_height / 2.0f;
+        float pad_cy  = board->right->y + ph / 2.0f;
+        float offset  = (ball_cy - pad_cy) / (ph / 2.0f);  // -1..1
+        if (offset > 1) offset = 1;
+        if (offset < -1) offset = -1;
 
+        float speed = hypotf(board->ball->vx, board->ball->vy) * 1.05f;  // optional speedup per hit
+        float angle = offset * 1.0f;                       // max ~57 degrees, in radians
+        float dir   = -1.0f;                               // send it away from the paddle
+
+        board->ball->vx = dir * speed * cosf(angle);
+        board->ball->vy = speed * sinf(angle);
+    }
+    
 
     draw_board(board);
+    #ifdef DEBUG
+    char buff[100];
+    snprintf(buff, sizeof(buff), "VX: %f, VY: %f, Speed: %f\n", board->ball->vx, board->ball->vy, sqrt((float)pow((board->ball->vx), 2) + pow(board->ball->vy, 2)));
+    strcat(speeds, buff);
+    #endif
+    return true;
 }
 
 int main(){
+    #ifdef DEBUG
+    speeds = calloc(100000, ' '); //some large buffer
+    #endif
     Board* b = create_board();
-    init_screen(b->width, b->height);
-    while (true){
-        run_cycle(b);
-        Sleep(200);
+    init_screen(b->width, b->height * (2 - b->config->bottom_rule_offset));
+    while (run_cycle(b)){
+        Sleep(50);
     }
+    #ifdef DEBUG
+    FILE* f = fopen("speeds.log", "w");
+    fprintf(f, "%s", speeds);
+    #endif
 }

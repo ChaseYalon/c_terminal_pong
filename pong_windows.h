@@ -9,3 +9,4 @@ void set_cursor_pos(int x, int y);
 void move_cursor_to_bottom();
 void init_screen(int w, int h);
 void present(void);
+void set_pixel_char(int x, int y, char c);

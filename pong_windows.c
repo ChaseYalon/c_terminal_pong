@@ -20,6 +20,17 @@ void set_pixel_white(int x, int y){
     c->Char.AsciiChar = ' ';
     c->Attributes = BACKGROUND_RED | BACKGROUND_GREEN |
                     BACKGROUND_BLUE | BACKGROUND_INTENSITY;}
+void set_pixel_char(int x, int y, char c) {
+    if (x < 0 || y < 0 || x >= width || y >= height) {
+        return;
+    }
+
+    CHAR_INFO *pixel = &pixel_buffs[y * width + x];
+    pixel->Char.AsciiChar = c;
+    pixel->Attributes = FOREGROUND_RED |
+                        FOREGROUND_GREEN |
+                        FOREGROUND_BLUE;
+}
 void set_pixel_black(int x, int y){
     return;
 }
